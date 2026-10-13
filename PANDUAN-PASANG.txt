@@ -30,3 +30,13 @@ BACKUP DAN PULIHKAN
   "Ganti semua" mengganti data sekarang dengan isi backup.
 - Titik merah di tombol berarti sudah lebih dari 7 hari sejak backup terakhir.
 - Update aplikasi: upload ulang semua file ke repo, lalu buka aplikasinya dua kali.
+
+LIHAT BESAR, UNDUH, SALIN
+- Tap foto atau video di kartu (atau di editor) untuk melihat besar. Ada tombol Unduh dan Bagikan.
+- Di editor, tombol "Unduh semua" mengunduh semua media kartu, dan "Salin semua teks" menyalin judul, catatan, dan hashtag.
+
+FITUR TAMBAHAN
+- Penghitung karakter: di kolom Catatan / caption, maksimal 500 tapi boleh lebih. Kalau lewat, tampil selisihnya (contoh -23).
+- Performa: di kartu Viral ada Views, Likes, Klik link, Komisi, dan catatan hasil.
+- Duplikat: tombol di editor kartu, membuat salinan dengan foto/video yang sama.
+- Arsip: tombol Arsip di kolom Done. Bisa arsipkan Done yang lama (7/14/30 hari) sekaligus, dan kembalikan kapan saja.
