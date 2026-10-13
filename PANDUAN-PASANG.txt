@@ -1,0 +1,32 @@
+STEFS CONTENT - cara pasang di HP
+
+Isi: 7 file (index.html, manifest.webmanifest, sw.js, 3 gambar ikon, panduan ini).
+Upload semua file langsung ke repo, tanpa dimasukkan ke folder.
+
+CARA 1 (paling mudah): GitHub Pages
+1. Buat repo baru di GitHub, misalnya "stefs-content".
+2. Upload semua isi folder ini (index.html langsung di root repo).
+3. Settings > Pages > Source: Deploy from a branch > main > /root > Save.
+4. Tunggu 1-2 menit, buka https://USERNAME.github.io/stefs-content/ di Chrome HP.
+5. Menu titik tiga > "Install app" / "Tambahkan ke layar utama".
+6. Buka sekali saat online. Setelah itu aplikasi jalan offline.
+
+CARA 2 (jadi file APK): PWABuilder
+1. Pastikan Cara 1 sudah jalan (butuh link https).
+2. Buka pwabuilder.com, tempel link tadi, tekan Start.
+3. Pilih Package for stores > Android > Generate.
+4. Unduh paketnya, ambil file .apk, kirim ke HP, lalu install
+   (izinkan "install dari sumber tidak dikenal").
+
+CATATAN
+- Data (kartu, foto, video) tersimpan di HP, bukan di server.
+- Kalau data situs Chrome dihapus, atau aplikasi diinstall ulang, data ikut hilang.
+
+BACKUP DAN PULIHKAN
+- Tombol panah turun di pojok kanan atas aplikasi.
+- Simpan backup: membuat satu file .stefs (kartu + foto + video) di folder Download.
+  Simpan juga di Google Drive atau kirim ke chat dirimu sendiri.
+- Pulihkan: pilih file .stefs. "Gabungkan" memperbarui kartu yang sama dan menjaga kartu lain.
+  "Ganti semua" mengganti data sekarang dengan isi backup.
+- Titik merah di tombol berarti sudah lebih dari 7 hari sejak backup terakhir.
+- Update aplikasi: upload ulang semua file ke repo, lalu buka aplikasinya dua kali.
