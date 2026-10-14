@@ -191,6 +191,37 @@ textarea.input { min-height: 84px; resize: vertical; }
 .arch-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 10px; padding: 8px 8px 8px 12px; }
 .arch-main { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; display: flex; flex-direction: column; gap: 2px; padding: 0; }
 .arch-title { font-weight: 600; overflow-wrap: anywhere; }
+.card-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.chip-up { font-size: 11px; font-weight: 600; color: var(--xt); background: var(--xb); border-radius: 5px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
+.chip-up.today { box-shadow: inset 0 0 0 1.5px var(--x); }
+.chip-up.late { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.card.drop-before { box-shadow: 0 -3px 0 0 var(--x); }
+.card.drop-after { box-shadow: 0 3px 0 0 var(--x); }
+.date-row { display: flex; gap: 8px; align-items: center; }
+.date-row .input { flex: 1; min-width: 0; }
+.scrim.top { z-index: 50; }
+.tools { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.tools::-webkit-scrollbar { display: none; }
+.tool { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
+.tool b { background: var(--viral-x); color: var(--ink-fg); border-radius: 99px; font-size: 11px; line-height: 1; padding: 3px 7px; font-variant-numeric: tabular-nums; }
+.pill { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--xb); color: var(--xt); }
+.meta-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.late-h { color: var(--danger); }
+.arch-row .btn { flex: none; }
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat { background: var(--surface); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.stat span { display: block; font-size: 12px; color: var(--muted); }
+.stat b { font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.recap-row { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; border: 0; background: var(--surface); border-radius: 10px; padding: 10px 12px; }
+.recap-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.recap-top b { font-variant-numeric: tabular-nums; }
+.bar { height: 6px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--viral-x); border-radius: 3px; }
+.tpl-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 10px; padding: 10px 8px 10px 12px; }
+.tpl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tpl-prev { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; }
+.tpl-btns { display: flex; gap: 6px; flex: none; }
+.tpl-btns .btn { flex: none; }
 @media (prefers-reduced-motion: no-preference) { .col { transition: transform .15s; } .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(24px); opacity: .6; } } }
 </style>
 
@@ -206,12 +237,14 @@ textarea.input { min-height: 84px; resize: vertical; }
     </button>
   </div>
   <nav class="tabs" id="tabs" aria-label="Kolom"></nav>
+  <div class="tools" id="tools"></div>
   <div id="banners"></div>
   <main class="board" id="board"></main>
 </div>
 <button class="fab" id="fab"><span>+</span>Kartu baru</button>
 <div id="sheetRoot"></div>
 <div id="toast" class="toast" role="status" hidden></div>
+<div id="popRoot"></div>
 <div id="viewerRoot"></div>
 
 <script>
@@ -220,7 +253,7 @@ textarea.input { min-height: 84px; resize: vertical; }
     { id: "inspo", name: "Inspo" }, { id: "ideas", name: "Ideas" }, { id: "ongoing", name: "Ongoing" },
     { id: "schedule", name: "Schedule" }, { id: "done", name: "Done" }, { id: "viral", name: "Viral" }
   ];
-  var state = { cards: [], q: "", tag: "", collapsed: {} };
+  var state = { cards: [], q: "", tag: "", collapsed: {}, tpls: [] };
   var db = null, urlCache = {};
 
   /* ---------- penyimpanan di perangkat (IndexedDB) ---------- */
@@ -326,24 +359,38 @@ textarea.input { min-height: 84px; resize: vertical; }
       onclick: function () { openSheet(c.id); },
       onkeydown: function (e) { if (e.key === "Enter") openSheet(c.id); },
       ondragstart: function (e) { el.classList.add("dragging"); try { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; } catch (x) {} },
-      ondragend: function () { el.classList.remove("dragging"); } },
+      ondragend: function () { el.classList.remove("dragging"); clearDrop(); },
+      ondragover: function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+        clearDrop(); el.classList.add(after ? "drop-after" : "drop-before");
+      },
+      ondragleave: function () { el.classList.remove("drop-before", "drop-after"); },
+      ondrop: function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2, id = "";
+        try { id = e.dataTransfer.getData("text/plain"); } catch (x) {}
+        clearDrop();
+        if (id && id !== c.id) placeCard(id, c.col, c.id, after);
+      } },
       thumb,
       h("div", { class: "card-main" },
         h("div", { class: "card-title" }, c.title || "Tanpa judul"),
         tagEls.length ? h("div", { class: "tags" }, tagEls) : null,
         perfLine(c), overFlag(c),
-        h("div", { class: "card-date" }, "Diubah " + fmt(c.updated))));
+        h("div", { class: "card-meta" }, uploadChip(c), h("span", { class: "card-date" }, "Diubah " + fmt(c.updated)))));
     return el;
   }
 
   function render() {
+    ensureOrder();
     var board = document.getElementById("board"), keep = board.scrollLeft;
     board.textContent = "";
     var tabs = document.getElementById("tabs");
     tabs.textContent = "";
     COLS.forEach(function (col, i) {
       var items = state.cards.filter(function (c) { return c.col === col.id && visible(c); })
-        .sort(function (a, b) { return b.updated - a.updated; });
+        .sort(cmpOrder);
       tabs.appendChild(h("button", { class: "tab" + (state.collapsed[col.id] ? " off" : ""), "data-col": col.id, "data-i": i, onclick: function () { if (state.collapsed[col.id]) toggleCol(col.id); scrollToCol(i); } },
         h("i"), col.name, h("b", null, String(items.length))));
       var body = h("div", { class: "col-body" });
@@ -352,9 +399,9 @@ textarea.input { min-height: 84px; resize: vertical; }
       body.addEventListener("dragover", function (e) { e.preventDefault(); body.classList.add("over"); });
       body.addEventListener("dragleave", function () { body.classList.remove("over"); });
       body.addEventListener("drop", function (e) {
-        e.preventDefault(); body.classList.remove("over");
+        e.preventDefault(); body.classList.remove("over"); clearDrop();
         var id = ""; try { id = e.dataTransfer.getData("text/plain"); } catch (x) {}
-        moveCard(id, col.id);
+        if (id) placeCard(id, col.id, null, false);
       });
       if (state.collapsed[col.id]) { board.appendChild(stripEl(col, items.length)); return; }
       board.appendChild(h("section", { class: "col", "data-col": col.id },
@@ -367,6 +414,7 @@ textarea.input { min-height: 84px; resize: vertical; }
     });
     board.scrollLeft = keep;
     renderBanners();
+    renderTools();
     markActiveTab();
   }
 
@@ -428,9 +476,8 @@ textarea.input { min-height: 84px; resize: vertical; }
   }
   function setTag(t) { state.tag = t; render(); }
   function moveCard(id, col) {
-    var c = state.cards.filter(function (x) { return x.id === id; })[0];
-    if (!c || c.col === col) return;
-    c.col = col; c.updated = Date.now(); c.sample = false; dbPut(c); render();
+    var first = colCards(col).filter(function (x) { return x.id !== id; })[0];
+    placeCard(id, col, first ? first.id : null, false);
   }
   function clearSamples() {
     state.cards = state.cards.filter(function (c) { if (c.sample) { dbDel(c.id); return false; } return true; });
@@ -442,11 +489,11 @@ textarea.input { min-height: 84px; resize: vertical; }
   function openSheet(id, presetCol) {
     var existing = id ? state.cards.filter(function (c) { return c.id === id; })[0] : null;
     draft = existing
-      ? { id: existing.id, isNew: false, title: existing.title, notes: existing.notes, col: existing.col, tags: existing.tags.slice(), media: existing.media.slice(), perf: normPerf(existing.perf), archived: !!existing.archived, created: existing.created, updated: existing.updated }
-      : { id: uid(), isNew: true, title: "", notes: "", col: presetCol || currentColId(), tags: [], media: [], perf: normPerf(), archived: false, created: Date.now(), updated: Date.now() };
+      ? { id: existing.id, isNew: false, title: existing.title, notes: existing.notes, col: existing.col, tags: existing.tags.slice(), media: existing.media.slice(), perf: normPerf(existing.perf), archived: !!existing.archived, postDate: existing.postDate || "", created: existing.created, updated: existing.updated }
+      : { id: uid(), isNew: true, title: "", notes: "", col: presetCol || currentColId(), tags: [], media: [], perf: normPerf(), archived: false, postDate: "", created: Date.now(), updated: Date.now() };
     drawSheet(true);
   }
-  function closeSheet() { draft = null; document.getElementById("sheetRoot").textContent = ""; }
+  function closeSheet() { draft = null; storageOpen = false; tplEdit = null; document.getElementById("sheetRoot").textContent = ""; }
 
   function drawSheet(focus) {
     var root = document.getElementById("sheetRoot"), confirmDel = false;
@@ -524,6 +571,12 @@ textarea.input { min-height: 84px; resize: vertical; }
         h("div", { class: "perf-grid" }, perfField("Views", "views"), perfField("Likes", "likes"), perfField("Klik link", "clicks"), perfField("Komisi (Rp)", "commission")),
         h("div", { class: "field" }, h("label", { for: "pNote" }, "Catatan hasil"), pNote));
     }
+    var dateIn = h("input", { class: "input", id: "fPost", type: "date", value: draft.postDate || "", oninput: function (e) { draft.postDate = e.target.value; } });
+    var postField = h("div", { class: "field" }, h("label", { for: "fPost" }, "Tanggal upload"),
+      h("div", { class: "date-row" }, dateIn,
+        h("button", { class: "btn ghost sm", type: "button", onclick: function () { dateIn.value = ""; draft.postDate = ""; } }, "Kosongkan")));
+    var upBtn = h("button", { class: "btn ghost half", type: "button", onclick: function () { nudge(-1); } }, "▲ Naikkan");
+    var downBtn = h("button", { class: "btn ghost half", type: "button", onclick: function () { nudge(1); } }, "▼ Turunkan");
     var dupBtn = h("button", { class: "btn ghost half", type: "button", onclick: duplicateDraft }, "Duplikat");
     var archBtn = h("button", { class: "btn ghost half", type: "button", onclick: function () {
       var toArch = !draft.archived;
@@ -537,14 +590,18 @@ textarea.input { min-height: 84px; resize: vertical; }
       h("div", { class: "field" }, h("label", { for: "fTitle" }, "Judul"), title),
       h("div", { class: "field" }, h("span", { class: "lbl" }, "Kolom"), statusRow),
       h("div", { class: "field" }, h("label", { for: "fTag" }, "Produk (#)"), tagBox),
+      postField,
       h("div", { class: "field" }, h("label", { for: "fNotes" }, "Catatan / caption"), notes, counter),
-      h("button", { class: "btn ghost copy-all", type: "button", onclick: copyAll }, "Salin semua teks"),
+      h("div", { class: "actions" },
+        h("button", { class: "btn ghost half", type: "button", onclick: openPicker }, "Template caption"),
+        h("button", { class: "btn ghost half copy-all", type: "button", onclick: copyAll }, "Salin semua teks")),
       perfBlock,
       h("div", { class: "field" }, h("span", { class: "lbl" }, "Foto dan video"), draft.media.length ? grid : null,
         draft.media.length > 1 ? h("button", { class: "btn ghost", type: "button", onclick: function () { downloadAll(draft.media); } }, "Unduh semua (" + draft.media.length + ")") : null,
         addBtn),
       draft.isNew ? null : h("div", { class: "stamp" }, "Terakhir diubah " + fmt(draft.updated)),
       draft.isNew ? null : h("div", { class: "actions" }, dupBtn, archBtn),
+      draft.isNew || draft.archived ? null : h("div", { class: "actions" }, upBtn, downBtn),
       h("div", { class: "actions" }, del, h("button", { class: "btn ghost", type: "button", onclick: closeSheet }, "Batal"),
         h("button", { class: "btn", type: "button", onclick: save }, "Simpan")));
     var scrim = h("div", { class: "scrim", onclick: function (e) { if (e.target === scrim) closeSheet(); } }, sheet);
@@ -556,12 +613,14 @@ textarea.input { min-height: 84px; resize: vertical; }
     var tagIn = document.getElementById("fTag");
     if (tagIn && tagIn.value.trim()) tagIn.value.split(/[\s,]+/).map(normTag).filter(Boolean).forEach(function (t) { if (draft.tags.indexOf(t) < 0) draft.tags.push(t); });
     var now = Date.now();
-    var card = { id: draft.id, title: draft.title.trim(), notes: draft.notes, col: draft.col, tags: draft.tags, media: draft.media, perf: normPerf(draft.perf), archived: !!draft.archived, created: draft.created, updated: now };
+    var card = { id: draft.id, title: draft.title.trim(), notes: draft.notes, col: draft.col, tags: draft.tags, media: draft.media, perf: normPerf(draft.perf), archived: !!draft.archived, postDate: draft.postDate || "", created: draft.created, updated: now };
     var i = state.cards.map(function (c) { return c.id; }).indexOf(card.id);
+    var prev = i >= 0 ? state.cards[i] : null;
+    card.order = prev && prev.col === card.col && typeof prev.order === "number" ? prev.order : topOrder(card.col);
     if (i >= 0) {
       var o = state.cards[i];
       var same = o.title === card.title && o.notes === card.notes && o.col === card.col && o.tags.join() === card.tags.join() && o.media.length === card.media.length
-        && JSON.stringify(normPerf(o.perf)) === JSON.stringify(card.perf) && !!o.archived === !!card.archived;
+        && JSON.stringify(normPerf(o.perf)) === JSON.stringify(card.perf) && !!o.archived === !!card.archived && (o.postDate || "") === card.postDate;
       if (same) card.updated = o.updated;
       state.cards[i] = card;
     } else state.cards.push(card);
@@ -596,11 +655,11 @@ textarea.input { min-height: 84px; resize: vertical; }
   function exportBackup() {
     var parts = [];
     var cards = state.cards.map(function (c) {
-      return { id: c.id, title: c.title, notes: c.notes, col: c.col, tags: c.tags, created: c.created, updated: c.updated, sample: !!c.sample, archived: !!c.archived, perf: normPerf(c.perf),
+      return { id: c.id, title: c.title, notes: c.notes, col: c.col, tags: c.tags, created: c.created, updated: c.updated, sample: !!c.sample, archived: !!c.archived, perf: normPerf(c.perf), postDate: c.postDate || "", order: typeof c.order === "number" ? c.order : null,
         media: c.media.map(function (m) { parts.push(m.blob); return { id: m.id, type: m.type, name: m.name || "", size: m.blob.size }; }) };
     });
     var enc = new TextEncoder();
-    var head = enc.encode(JSON.stringify({ v: 1, exported: Date.now(), cards: cards }));
+    var head = enc.encode(JSON.stringify({ v: 1, exported: Date.now(), cards: cards, templates: state.tpls }));
     var len = new Uint8Array(4);
     new DataView(len.buffer).setUint32(0, head.length, true);
     var blob = new Blob([enc.encode("STEFSBK1"), len, head].concat(parts), { type: "application/octet-stream" });
@@ -644,10 +703,13 @@ textarea.input { min-height: 84px; resize: vertical; }
       tags: (Array.isArray(c.tags) ? c.tags : []).map(normTag).filter(Boolean),
       created: Number(c.created) || Date.now(), updated: Number(c.updated) || Date.now(), sample: !!c.sample,
       archived: !!c.archived, perf: cleanPerf(c.perf),
+      postDate: /^\d{4}-\d{2}-\d{2}$/.test(String(c.postDate || "")) ? c.postDate : "",
+      order: typeof c.order === "number" ? c.order : undefined,
       media: c.media.filter(function (m) { return m.blob; }).map(function (m) { return { id: String(m.id), type: String(m.type || "image/jpeg"), name: String(m.name || ""), blob: m.blob }; })
     };
   }
   function applyBackup(meta, replace) {
+    applyTemplates(meta, replace);
     if (replace) { state.cards.forEach(function (c) { dbDel(c.id); }); state.cards = []; flag("seeded", "1"); }
     meta.cards.forEach(function (raw) {
       var c = cleanCard(raw), i = state.cards.map(function (x) { return x.id; }).indexOf(c.id);
@@ -686,7 +748,7 @@ textarea.input { min-height: 84px; resize: vertical; }
         if (!confirmReplace) { confirmReplace = true; replaceBtn.textContent = "Yakin? Semua data sekarang dihapus"; return; }
         applyBackup(pending, true); closeSheet(); showToast("Data dipulihkan: " + n + " kartu");
       } }, "Ganti semua data");
-      restore.appendChild(h("div", { class: "hint" }, "File berisi " + n + " kartu" + (pending.exported ? ", dibuat " + fmt(pending.exported) : "") + "."));
+      restore.appendChild(h("div", { class: "hint" }, "File berisi " + n + " kartu" + (Array.isArray(pending.templates) && pending.templates.length ? ", " + pending.templates.length + " template" : "") + (pending.exported ? ", dibuat " + fmt(pending.exported) : "") + "."));
       restore.appendChild(h("div", { class: "stack" },
         h("button", { class: "btn", type: "button", onclick: function () { applyBackup(pending, false); closeSheet(); showToast("Data digabung: " + n + " kartu"); } }, "Gabungkan dengan data sekarang"),
         replaceBtn,
@@ -802,6 +864,353 @@ textarea.input { min-height: 84px; resize: vertical; }
     root.appendChild(h("div", { class: "vw", role: "dialog", "aria-modal": "true", "aria-label": "Lihat media" }, bar, stage));
   }
 
+  /* ---------- urutan prioritas dan tanggal upload ---------- */
+  function cmpOrder(a, b) {
+    var ao = typeof a.order === "number" ? a.order : 1e9, bo = typeof b.order === "number" ? b.order : 1e9;
+    return ao - bo || b.updated - a.updated;
+  }
+  function colCards(col) { return state.cards.filter(function (c) { return c.col === col && !c.archived; }).sort(cmpOrder); }
+  function topOrder(col) {
+    var os = state.cards.filter(function (c) { return c.col === col && typeof c.order === "number"; }).map(function (c) { return c.order; });
+    return os.length ? Math.min.apply(null, os) - 10 : 10;
+  }
+  function orderAfter(id, col) {
+    var o = state.cards.filter(function (x) { return x.id === id; })[0];
+    return o && o.col === col && typeof o.order === "number" ? o.order + 5 : topOrder(col);
+  }
+  function ensureOrder() {
+    COLS.forEach(function (col) {
+      var list = state.cards.filter(function (c) { return c.col === col.id && typeof c.order !== "number"; });
+      if (!list.length) return;
+      var base = state.cards.filter(function (c) { return c.col === col.id && typeof c.order === "number"; });
+      var min = base.length ? Math.min.apply(null, base.map(function (c) { return c.order; })) : 10 + list.length * 10;
+      list.sort(function (a, b) { return b.updated - a.updated; });
+      list.forEach(function (c, i) { c.order = min - (list.length - i) * 10; dbPut(c); });
+    });
+  }
+  function placeCard(id, col, targetId, after) {
+    var c = state.cards.filter(function (x) { return x.id === id; })[0];
+    if (!c) return;
+    var changed = c.col !== col;
+    var list = colCards(col).filter(function (x) { return x.id !== id; });
+    var idx = list.length;
+    if (targetId) {
+      var t = list.map(function (x) { return x.id; }).indexOf(targetId);
+      if (t >= 0) idx = t + (after ? 1 : 0);
+    }
+    c.col = col; c.sample = false;
+    if (changed) c.updated = Date.now();
+    list.splice(idx, 0, c);
+    list.forEach(function (x, i) { var o = (i + 1) * 10; if (x === c || x.order !== o) { x.order = o; dbPut(x); } });
+    render();
+  }
+  function clearDrop() {
+    var els = document.querySelectorAll(".drop-before,.drop-after");
+    for (var i = 0; i < els.length; i++) els[i].classList.remove("drop-before", "drop-after");
+  }
+  function nudge(dir) {
+    var c = state.cards.filter(function (x) { return x.id === draft.id; })[0];
+    if (!c) return;
+    var list = colCards(c.col), i = list.map(function (x) { return x.id; }).indexOf(c.id), j = i + dir;
+    if (j < 0 || j >= list.length) { showToast(dir < 0 ? "Sudah di paling atas" : "Sudah di paling bawah"); return; }
+    placeCard(c.id, c.col, list[j].id, dir > 0);
+    showToast(dir < 0 ? "Prioritas dinaikkan" : "Prioritas diturunkan");
+  }
+  function fmtDate(iso) { return iso.slice(8, 10) + "/" + iso.slice(5, 7) + "/" + iso.slice(2, 4); }
+  function todayIso() {
+    var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+  function uploadChip(c) {
+    if (!c.postDate) return null;
+    var t = todayIso(), cls = "chip-up";
+    if (c.postDate === t) cls += " today";
+    else if (c.postDate < t && c.col !== "done" && c.col !== "viral") cls += " late";
+    return h("span", { class: cls, title: "Tanggal upload" }, "Upload " + fmtDate(c.postDate));
+  }
+
+  /* ---------- lembar umum, baris alat ---------- */
+  function shell(title, blocks, label, root, onClose, top) {
+    var sheet = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": label || title },
+      h("div", { class: "sheet-top" }, h("h3", null, title),
+        h("button", { class: "x-btn", type: "button", "aria-label": "Tutup", onclick: onClose }, "×")),
+      blocks);
+    var scrim = h("div", { class: "scrim" + (top ? " top" : ""), onclick: function (e) { if (e.target === scrim) onClose(); } }, sheet);
+    root.textContent = "";
+    root.appendChild(scrim);
+  }
+  function sheetRoot() { return document.getElementById("sheetRoot"); }
+  function closePop() { document.getElementById("popRoot").textContent = ""; }
+  function renderTools() {
+    var box = document.getElementById("tools");
+    if (!box) return;
+    box.textContent = "";
+    var n = agendaCount();
+    box.appendChild(h("button", { class: "tool", type: "button", onclick: openToday }, "Hari ini", n ? h("b", null, String(n)) : null));
+    box.appendChild(h("button", { class: "tool", type: "button", onclick: openRecap }, "Rekap"));
+    box.appendChild(h("button", { class: "tool", type: "button", onclick: openTemplates }, "Template"));
+    box.appendChild(h("button", { class: "tool", type: "button", onclick: openStorage }, "Penyimpanan"));
+  }
+
+  /* ---------- hari ini ---------- */
+  function addDays(iso, n) {
+    var p = iso.split("-").map(Number), d = new Date(p[0], p[1] - 1, p[2] + n), z = function (x) { return (x < 10 ? "0" : "") + x; };
+    return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
+  }
+  function isOpen(c) { return c.col !== "done" && c.col !== "viral"; }
+  function agenda() {
+    var t = todayIso(), end = addDays(t, 7);
+    var live = state.cards.filter(function (c) { return c.postDate && !c.archived; });
+    var byDate = function (a, b) { return a.postDate < b.postDate ? -1 : a.postDate > b.postDate ? 1 : cmpOrder(a, b); };
+    return {
+      late: live.filter(function (c) { return c.postDate < t && isOpen(c); }).sort(byDate),
+      today: live.filter(function (c) { return c.postDate === t; }).sort(cmpOrder),
+      soon: live.filter(function (c) { return c.postDate > t && c.postDate <= end && isOpen(c); }).sort(byDate)
+    };
+  }
+  function agendaCount() { var a = agenda(); return a.late.length + a.today.filter(isOpen).length; }
+  function agendaRow(c) {
+    var side = isOpen(c)
+      ? h("button", { class: "btn sm", type: "button", onclick: function () { moveCard(c.id, "done"); showToast("Dipindah ke Done"); drawToday(); } }, "Sudah upload")
+      : h("span", { class: "hint" }, "Selesai");
+    return h("div", { class: "arch-row" },
+      h("button", { class: "arch-main", type: "button", onclick: function () { openSheet(c.id); } },
+        h("span", { class: "arch-title" }, c.title || "Tanpa judul"),
+        h("span", { class: "meta-line" }, h("span", { class: "pill", "data-col": c.col }, colName(c.col)), h("span", { class: "hint" }, "Upload " + fmtDate(c.postDate)))),
+      side);
+  }
+  function openToday() { draft = null; storageOpen = false; drawToday(); }
+  function drawToday() {
+    var a = agenda(), blocks = [];
+    function block(title, list, cls) {
+      if (!list.length) return;
+      var b = h("div", { class: "bk-block" }, h("h4", { class: cls || "" }, title + " (" + list.length + ")"));
+      list.forEach(function (c) { b.appendChild(agendaRow(c)); });
+      blocks.push(b);
+    }
+    block("Terlewat", a.late, "late-h");
+    block("Hari ini", a.today);
+    block("7 hari ke depan", a.soon);
+    if (!blocks.length) blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Belum ada jadwal"),
+      h("div", { class: "hint" }, "Isi Tanggal upload di kartu. Kartunya muncul di sini saat harinya tiba, atau kalau sudah lewat.")));
+    shell("Hari ini, " + fmtDate(todayIso()), blocks, "Jadwal upload", sheetRoot(), closeSheet, false);
+  }
+
+  /* ---------- rekap performa per produk ---------- */
+  var recapKey = "commission";
+  var METRICS = [["commission", "Komisi"], ["views", "Views"], ["clicks", "Klik"], ["likes", "Likes"]];
+  var nfFull = new Intl.NumberFormat("id-ID");
+  function num(x) { return Number(x) || 0; }
+  function metricText(key, v) { return key === "commission" ? "Rp " + nfFull.format(v) : nfFull.format(v); }
+  function perfCards() {
+    return state.cards.filter(function (c) { var p = c.perf; return p && (num(p.views) || num(p.likes) || num(p.clicks) || num(p.commission)); });
+  }
+  function openRecap() { draft = null; storageOpen = false; drawRecap(); }
+  function drawRecap() {
+    var cards = perfCards(), blocks = [];
+    if (!cards.length) {
+      blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Belum ada data performa"),
+        h("div", { class: "hint" }, "Buka kartu di kolom Viral, lalu isi Views, Likes, Klik link, dan Komisi. Rekap per produk muncul di sini.")));
+      shell("Rekap performa", blocks, "Rekap performa", sheetRoot(), closeSheet, false);
+      return;
+    }
+    var tot = { views: 0, likes: 0, clicks: 0, commission: 0 }, map = {};
+    cards.forEach(function (c) {
+      ["views", "likes", "clicks", "commission"].forEach(function (k) { tot[k] += num(c.perf[k]); });
+      (c.tags.length ? c.tags : [""]).forEach(function (t) {
+        var r = map[t] || (map[t] = { tag: t, n: 0, views: 0, likes: 0, clicks: 0, commission: 0 });
+        r.n++;
+        ["views", "likes", "clicks", "commission"].forEach(function (k) { r[k] += num(c.perf[k]); });
+      });
+    });
+    var ratio = tot.views > 0 ? new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(tot.clicks / tot.views * 100) + "%" : "-";
+    function stat(label, val) { return h("div", { class: "stat" }, h("span", null, label), h("b", null, val)); }
+    blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Total"),
+      h("div", { class: "hint" }, cards.length + " konten dengan data performa, termasuk yang diarsipkan."),
+      h("div", { class: "stat-grid" }, stat("Komisi", metricText("commission", tot.commission)), stat("Views", nfFull.format(tot.views)),
+        stat("Klik link", nfFull.format(tot.clicks)), stat("Rasio klik", ratio))));
+    var chips = h("div", { class: "status-row" });
+    METRICS.forEach(function (m) {
+      chips.appendChild(h("button", { class: "status-chip", type: "button", "data-col": "viral", "aria-pressed": String(recapKey === m[0]),
+        onclick: function () { recapKey = m[0]; drawRecap(); } }, m[1]));
+    });
+    var rows = Object.keys(map).map(function (k) { return map[k]; })
+      .sort(function (a, b) { return b[recapKey] - a[recapKey] || b.n - a.n; });
+    var max = Math.max.apply(null, rows.map(function (r) { return r[recapKey]; }).concat([0]));
+    var list = h("div", { class: "bk-block" }, h("h4", null, "Per produk (#)"), h("div", { class: "hint" }, "Urutkan berdasarkan:"), chips);
+    rows.forEach(function (r) {
+      var pct = max > 0 ? Math.round(r[recapKey] / max * 100) : 0;
+      list.appendChild(h("button", { class: "recap-row", type: "button", disabled: r.tag ? null : "true",
+        onclick: function () { if (r.tag) { closeSheet(); setTag(r.tag); } } },
+        h("div", { class: "recap-top" }, h("span", { class: "arch-title" }, r.tag ? "#" + r.tag : "Tanpa #"), h("b", null, metricText(recapKey, r[recapKey]))),
+        h("div", { class: "bar" }, h("i", { style: "width:" + pct + "%" })),
+        h("div", { class: "hint" }, r.n + " konten · " + nfFull.format(r.views) + " views · " + nfFull.format(r.likes) + " likes · " + nfFull.format(r.clicks) + " klik · Rp " + nfFull.format(r.commission))));
+    });
+    list.appendChild(h("div", { class: "hint" }, "Kartu dengan beberapa # dihitung di tiap #-nya, jadi jumlah per # bisa lebih besar dari total. Tap satu baris untuk melihat kartunya."));
+    blocks.push(list);
+    shell("Rekap performa", blocks, "Rekap performa", sheetRoot(), closeSheet, false);
+  }
+
+  /* ---------- template caption ---------- */
+  var tplEdit = null;
+  var TPL_SEED = [
+    { id: "tpl-mitos", name: "Mitos vs fakta", text: "Mitos: ...\nFakta: ...\n\nYang perlu dicek sebelum beli:\n1. ...\n2. ...\n3. ...\n\nLink produk ada di bawah." },
+    { id: "tpl-review", name: "Review singkat", text: "Hook: ...\n\nKenapa aku pilih ini:\n- ...\n- ...\n\nCocok untuk: ...\nKurang cocok untuk: ...\n\nLink di bawah ya." }
+  ];
+  function saveTemplates() { flag("tpl", JSON.stringify(state.tpls)); }
+  function loadTemplates() {
+    var raw = flag("tpl"), arr = null;
+    try { arr = raw ? JSON.parse(raw) : null; } catch (e) { arr = null; }
+    if (Array.isArray(arr)) { state.tpls = arr.filter(function (t) { return t && t.id && typeof t.text === "string"; }); return; }
+    if (!flag("tplSeeded")) {
+      state.tpls = TPL_SEED.map(function (t) { return { id: t.id, name: t.name, text: t.text, updated: Date.now(), sample: true }; });
+      saveTemplates(); flag("tplSeeded", "1");
+    }
+  }
+  function applyTemplates(meta, replace) {
+    if (!Array.isArray(meta.templates)) return;
+    var incoming = meta.templates.filter(function (t) { return t && t.id && typeof t.text === "string"; })
+      .map(function (t) { return { id: String(t.id), name: String(t.name || ""), text: String(t.text), updated: Number(t.updated) || Date.now(), sample: !!t.sample }; });
+    if (replace) state.tpls = incoming;
+    else incoming.forEach(function (t) {
+      var i = state.tpls.map(function (x) { return x.id; }).indexOf(t.id);
+      if (i >= 0) state.tpls[i] = t; else state.tpls.push(t);
+    });
+    saveTemplates(); flag("tplSeeded", "1");
+  }
+  function countMsg(n) {
+    var left = 500 - n;
+    return left >= 0 ? n + " / 500 karakter, sisa " + left : n + " / 500 karakter, -" + (-left) + " (kurangi " + (-left) + " untuk mencapai 500)";
+  }
+  function openTemplates() { draft = null; storageOpen = false; tplEdit = null; drawTemplates(false); }
+  function openPicker() { tplEdit = null; drawTemplates(true); }
+  function useTemplate(t) {
+    var ta = document.getElementById("fNotes");
+    if (!ta || !draft) return;
+    var cur = ta.value, start = 0;
+    if (cur.trim()) { cur = cur.replace(/\s+$/, "") + "\n\n"; start = cur.length; ta.value = cur + t.text; } else ta.value = t.text;
+    ta.dispatchEvent(new Event("input"));
+    closePop();
+    ta.focus();
+    var j = ta.value.indexOf("...", start);
+    if (j >= 0) { try { ta.setSelectionRange(j, j + 3); } catch (e) {} }
+    showToast("Template dimasukkan");
+  }
+  function tplRow(t, pick, redraw) {
+    var del = null, sure = false;
+    var btns = pick
+      ? h("div", { class: "tpl-btns" }, h("button", { class: "btn sm", type: "button", onclick: function () { useTemplate(t); } }, "Pakai"))
+      : h("div", { class: "tpl-btns" },
+          h("button", { class: "btn ghost sm", type: "button", onclick: function () { tplEdit = { id: t.id, name: t.name, text: t.text }; redraw(); } }, "Ubah"),
+          del = h("button", { class: "btn danger sm", type: "button", onclick: function () {
+            if (!sure) { sure = true; del.textContent = "Yakin?"; return; }
+            state.tpls = state.tpls.filter(function (x) { return x.id !== t.id; }); saveTemplates(); redraw();
+          } }, "Hapus"));
+    return h("div", { class: "tpl-row" },
+      h("div", { class: "tpl-main" }, h("span", { class: "arch-title" }, (t.name || "Tanpa nama") + (t.sample ? " (contoh)" : "")), h("span", { class: "tpl-prev" }, t.text)),
+      btns);
+  }
+  function tplEditor(redraw) {
+    var t = tplEdit;
+    var counter = h("div", { class: "counter" });
+    function upd() { var n = Array.from(t.text).length; counter.className = "counter" + (n > 500 ? " over" : n >= 450 ? " warn" : ""); counter.textContent = countMsg(n); }
+    var name = h("input", { class: "input", id: "tName", placeholder: "Nama template, contoh: Review dapur", value: t.name, oninput: function (e) { t.name = e.target.value; } });
+    var text = h("textarea", { class: "input", id: "tText", placeholder: "Tulis kerangka caption. Tanda ... mudah kamu isi nanti.", oninput: function (e) { t.text = e.target.value; upd(); } });
+    text.value = t.text;
+    upd();
+    function saveTpl() {
+      var nm = t.name.trim();
+      if (!nm) { showToast("Beri nama template dulu"); return; }
+      if (!t.text.trim()) { showToast("Isi caption belum ditulis"); return; }
+      if (t.id) {
+        var i = state.tpls.map(function (x) { return x.id; }).indexOf(t.id);
+        if (i >= 0) state.tpls[i] = { id: t.id, name: nm, text: t.text, updated: Date.now() };
+      } else state.tpls.unshift({ id: uid(), name: nm, text: t.text, updated: Date.now() });
+      saveTemplates(); tplEdit = null; showToast("Template disimpan"); redraw();
+    }
+    return h("div", { class: "bk-block" }, h("h4", null, t.id ? "Ubah template" : "Template baru"),
+      h("div", { class: "field" }, h("label", { for: "tName" }, "Nama"), name),
+      h("div", { class: "field" }, h("label", { for: "tText" }, "Isi caption"), text, counter),
+      h("div", { class: "actions" }, h("button", { class: "btn ghost", type: "button", onclick: function () { tplEdit = null; redraw(); } }, "Batal"),
+        h("button", { class: "btn", type: "button", onclick: saveTpl }, "Simpan")));
+  }
+  function drawTemplates(pick) {
+    var blocks = [], redraw = function () { drawTemplates(pick); };
+    if (tplEdit) blocks.push(tplEditor(redraw));
+    else {
+      if (pick && draft && draft.notes.trim()) {
+        var nameIn = h("input", { class: "input", id: "tSaveName", placeholder: "Nama template, contoh: Review dapur" });
+        blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Simpan caption ini"),
+          h("div", { class: "hint" }, "Caption yang sedang kamu tulis disimpan sebagai template baru."), nameIn,
+          h("button", { class: "btn ghost", type: "button", onclick: function () {
+            var nm = nameIn.value.trim();
+            if (!nm) { showToast("Beri nama template dulu"); nameIn.focus(); return; }
+            state.tpls.unshift({ id: uid(), name: nm, text: draft.notes, updated: Date.now() });
+            saveTemplates(); showToast("Template disimpan"); redraw();
+          } }, "Simpan sebagai template")));
+      }
+      var list = h("div", { class: "bk-block" }, h("h4", null, "Template (" + state.tpls.length + ")"));
+      if (pick && state.tpls.length) list.appendChild(h("div", { class: "hint" }, "Pilih template untuk memasukkannya ke caption. Bagian ... langsung terpilih supaya mudah diganti."));
+      if (!state.tpls.length) list.appendChild(h("div", { class: "hint" }, "Belum ada template. Simpan kerangka caption yang sering kamu pakai, lalu tinggal dipilih saat membuat kartu."));
+      state.tpls.forEach(function (t) { list.appendChild(tplRow(t, pick, redraw)); });
+      blocks.push(list);
+      if (!pick) blocks.push(h("button", { class: "btn", type: "button", onclick: function () { tplEdit = { id: null, name: "", text: "" }; redraw(); } }, "Template baru"));
+    }
+    shell("Template caption", blocks, "Template caption", pick ? document.getElementById("popRoot") : sheetRoot(), pick ? closePop : closeSheet, pick);
+  }
+
+  /* ---------- penyimpanan ---------- */
+  var storageOpen = false;
+  function openStorage() {
+    draft = null; storageOpen = true; drawStorage(null);
+    var st = navigator.storage;
+    var e = st && st.estimate ? st.estimate().catch(function () { return null; }) : Promise.resolve(null);
+    var p = st && st.persisted ? st.persisted().catch(function () { return null; }) : Promise.resolve(null);
+    Promise.all([e, p]).then(function (r) { if (storageOpen) drawStorage({ est: r[0], persisted: r[1] }); });
+  }
+  function drawStorage(info) {
+    var total = 0, files = 0, per = [];
+    state.cards.forEach(function (c) {
+      var s = 0;
+      c.media.forEach(function (m) { s += m.blob.size; files++; });
+      total += s;
+      if (s > 0) per.push({ c: c, s: s, n: c.media.length });
+    });
+    per.sort(function (a, b) { return b.s - a.s; });
+    var b1 = h("div", { class: "bk-block" }, h("h4", null, "Ruang yang dipakai"),
+      h("div", { class: "stat-grid" },
+        h("div", { class: "stat" }, h("span", null, "Foto dan video"), h("b", null, mb(total))),
+        h("div", { class: "stat" }, h("span", null, "Jumlah file"), h("b", null, nfFull.format(files)))));
+    if (info && info.est && typeof info.est.usage === "number") {
+      b1.appendChild(h("div", { class: "hint" }, "Total data aplikasi: " + mb(info.est.usage) + (typeof info.est.quota === "number" ? ". Batas perkiraan browser: " + mb(info.est.quota) + "." : ".") + " Angka ini perkiraan dari perangkat."));
+    } else if (!info) b1.appendChild(h("div", { class: "hint" }, "Menghitung total data aplikasi..."));
+    if (total > 1024 * 1048576) b1.appendChild(h("div", { class: "hint err" }, "Sudah lebih dari 1 GB. Simpan backup, lalu hapus media di kartu yang sudah selesai."));
+    else if (total > 500 * 1048576) b1.appendChild(h("div", { class: "hint" }, "Sudah cukup besar. Sesekali hapus media di kartu yang sudah selesai."));
+    if (info && info.persisted === true) b1.appendChild(h("div", { class: "hint" }, "Perlindungan data: aktif. Browser tidak membersihkan data ini otomatis saat memori hampir penuh."));
+    if (info && info.persisted === false) {
+      b1.appendChild(h("div", { class: "hint" }, "Perlindungan data: belum aktif. Browser bisa membersihkan data jika memori HP hampir penuh."));
+      b1.appendChild(h("button", { class: "btn ghost sm", type: "button", onclick: function () {
+        var p = navigator.storage && navigator.storage.persist ? navigator.storage.persist() : Promise.resolve(false);
+        p.then(function (ok) { showToast(ok ? "Perlindungan data aktif" : "Perangkat belum mengizinkan"); openStorage(); })
+          .catch(function () { showToast("Perangkat belum mengizinkan"); });
+      } }, "Aktifkan perlindungan"));
+    }
+    var b2 = h("div", { class: "bk-block" }, h("h4", null, "Kartu paling besar"));
+    if (!per.length) b2.appendChild(h("div", { class: "hint" }, "Belum ada kartu dengan foto atau video."));
+    per.slice(0, 6).forEach(function (x) {
+      b2.appendChild(h("div", { class: "arch-row" },
+        h("div", { class: "arch-main" }, h("span", { class: "arch-title" }, x.c.title || "Tanpa judul"), h("span", { class: "hint" }, x.n + " media, " + mb(x.s) + (x.c.archived ? ", di arsip" : ""))),
+        h("button", { class: "btn ghost sm", type: "button", onclick: function () { openSheet(x.c.id); } }, "Buka")));
+    });
+    if (per.length) b2.appendChild(h("div", { class: "hint" }, "Untuk menghemat ruang: buka kartu, unduh medianya bila perlu, lalu hapus dengan tombol ×."));
+    var b3 = h("div", { class: "bk-block" }, h("h4", null, "Di mana datanya di HP?"),
+      h("div", { class: "hint" }, "Kartu, foto, dan video disimpan di penyimpanan privat Chrome untuk situs github.io-mu. Aplikasi ini berjalan lewat Chrome. Isinya tidak muncul di Galeri atau File."),
+      h("div", { class: "hint" }, "Cek ukurannya: Pengaturan HP > Aplikasi > Chrome > Penyimpanan, atau di Chrome: titik tiga > Setelan > Setelan situs > Semua situs, lalu cari github.io."),
+      h("div", { class: "hint" }, "File yang kamu Unduh dan file Backup ada di folder Download, dan muncul di Galeri atau File."),
+      h("div", { class: "hint err" }, "Menghapus data Chrome atau data situs ini ikut menghapus semua kartu. Simpan backup dulu."));
+    shell("Penyimpanan", [b1, b2, b3], "Penyimpanan", sheetRoot(), closeSheet, false);
+  }
+
   /* ---------- performa, duplikat, arsip ---------- */
   function normPerf(p) { return Object.assign({ views: "", likes: "", clicks: "", commission: "", note: "" }, p || {}); }
   function cleanPerf(p) {
@@ -840,7 +1249,7 @@ textarea.input { min-height: 84px; resize: vertical; }
       id: uid(), title: (draft.title.trim() || "Tanpa judul") + " (salinan)", notes: draft.notes, col: draft.col,
       tags: draft.tags.slice(),
       media: draft.media.map(function (m) { return { id: uid(), type: m.type, name: m.name, blob: m.blob }; }),
-      perf: normPerf(), archived: false, created: now, updated: now
+      perf: normPerf(), archived: false, postDate: "", order: orderAfter(draft.id, draft.col), created: now, updated: now
     };
     state.cards.push(copy);
     dbPut(copy);
@@ -914,6 +1323,7 @@ textarea.input { min-height: 84px; resize: vertical; }
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (vwOpen) closeViewer();
+    else if (document.getElementById("popRoot").firstChild) closePop();
     else if (document.getElementById("sheetRoot").firstChild) closeSheet();
   });
   window.addEventListener("popstate", function () { if (vwOpen) hideViewer(); });
@@ -926,6 +1336,7 @@ textarea.input { min-height: 84px; resize: vertical; }
 
   /* ---------- mulai ---------- */
   try { state.collapsed = JSON.parse(flag("collapsed") || "{}") || {}; } catch (e) { state.collapsed = {}; }
+  loadTemplates();
   render();
   openDB().then(function (d) {
     db = d;

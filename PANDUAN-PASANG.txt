@@ -40,3 +40,20 @@ FITUR TAMBAHAN
 - Performa: di kartu Viral ada Views, Likes, Klik link, Komisi, dan catatan hasil.
 - Duplikat: tombol di editor kartu, membuat salinan dengan foto/video yang sama.
 - Arsip: tombol Arsip di kolom Done. Bisa arsipkan Done yang lama (7/14/30 hari) sekaligus, dan kembalikan kapan saja.
+
+URUTAN PRIORITAS DAN TANGGAL UPLOAD
+- Drag kartu ke atas atau bawah kartu lain di kolom yang sama untuk mengatur prioritas. Garis warna menunjukkan posisi jatuhnya. Urutan tersimpan.
+- Cadangan: di editor kartu ada tombol Naikkan dan Turunkan.
+- Tanggal upload: isi di editor kartu. Di kartu tampil kecil, misalnya "Upload 13/10/26". Hari ini diberi garis, yang sudah lewat (selain Done dan Viral) berwarna merah.
+
+HARI INI, REKAP, TEMPLATE, PENYIMPANAN (baris tombol di bawah tab kolom)
+- Hari ini: kartu yang terlewat, jadwal hari ini, dan 7 hari ke depan. Angka merah = yang perlu diupload. Tombol "Sudah upload" memindahkan kartu ke Done.
+- Rekap: total komisi, views, klik, dan rasio klik, lalu per produk (#). Bisa diurutkan, tap satu baris untuk melihat kartunya.
+- Template: simpan kerangka caption. Di editor kartu tap "Template caption" untuk memasukkannya. Bagian "..." langsung terpilih untuk diganti. Template ikut tersimpan di backup.
+- Penyimpanan: ukuran foto dan video, kartu paling besar, dan status perlindungan data.
+
+LOKASI DATA DI HP
+- Kartu, foto, dan video disimpan di penyimpanan privat Chrome untuk situs github.io-mu. Tidak muncul di Galeri atau File.
+- Cek ukuran: Pengaturan HP > Aplikasi > Chrome > Penyimpanan, atau Chrome > titik tiga > Setelan > Setelan situs > Semua situs.
+- File hasil Unduh dan Backup ada di folder Download.
+- Menghapus data Chrome atau data situs ikut menghapus semua kartu. Simpan backup dulu.
