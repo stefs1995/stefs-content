@@ -1,4 +1,4 @@
-const CACHE = "stefs-content-v6";
+const CACHE = "stefs-content-v8";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {
@@ -6,6 +6,9 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  const u = new URL(e.request.url);
+  const ok = u.origin === self.location.origin || u.hostname === "fonts.googleapis.com" || u.hostname === "fonts.gstatic.com";
+  if (!ok) return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {
       const net = fetch(e.request).then((res) => {

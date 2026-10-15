@@ -99,11 +99,11 @@ button { cursor: pointer; }
 .col-body.over { outline: 2px dashed var(--x); outline-offset: -4px; }
 .empty { color: var(--xt); opacity: .75; font-size: 13px; padding: 14px 6px; text-align: center; }
 
-.card { display: block; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 10px; padding: 0; overflow: hidden; border-top: 3px solid var(--x); box-shadow: 0 1px 0 var(--line); }
+.card { flex: none; display: block; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 10px; padding: 0; overflow: hidden; border-top: 3px solid var(--x); box-shadow: 0 1px 0 var(--line); }
 .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); }
 .card.dragging { opacity: .45; }
-.thumb { position: relative; aspect-ratio: 16/10; background: var(--surface2); overflow: hidden; }
-.thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb { position: relative; min-height: 80px; background: var(--surface2); overflow: hidden; }
+.thumb img, .thumb video { width: 100%; height: auto; max-height: 70vh; object-fit: contain; display: block; margin: 0 auto; }
 .thumb .more { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 99px; }
 .thumb .play { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 99px; }
 .card-main { padding: 10px 12px 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -222,6 +222,10 @@ textarea.input { min-height: 84px; resize: vertical; }
 .tpl-prev { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; }
 .tpl-btns { display: flex; gap: 6px; flex: none; }
 .tpl-btns .btn { flex: none; }
+.tool.dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--viral-x); }
+.btn[disabled] { opacity: .55; cursor: default; }
+.sync-url { display: flex; gap: 8px; align-items: center; }
+.sync-url code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12.5px; background: var(--surface); border-radius: 8px; padding: 8px 10px; }
 @media (prefers-reduced-motion: no-preference) { .col { transition: transform .15s; } .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(24px); opacity: .6; } } }
 </style>
 
@@ -272,12 +276,13 @@ textarea.input { min-height: 84px; resize: vertical; }
       if (!db) return res([]);
       try {
         var q = db.transaction("cards").objectStore("cards").getAll();
-        q.onsuccess = function () { res(q.result || []); };
+        q.onsuccess = function () { res((q.result || []).map(function (c) { if (!c.rev) c.rev = c.updated || c.created || 1; return c; })); };
         q.onerror = function () { res([]); };
       } catch (e) { res([]); }
     });
   }
-  function dbPut(c) { if (!db) return; try { db.transaction("cards", "readwrite").objectStore("cards").put(c); } catch (e) {} }
+  function dbPutRaw(c) { if (!db) return; try { db.transaction("cards", "readwrite").objectStore("cards").put(c); } catch (e) {} }
+  function dbPut(c) { c.rev = Date.now(); dbPutRaw(c); }
   function dbDel(id) { if (!db) return; try { db.transaction("cards", "readwrite").objectStore("cards").delete(id); } catch (e) {} }
   function flag(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; }
 
@@ -493,7 +498,7 @@ textarea.input { min-height: 84px; resize: vertical; }
       : { id: uid(), isNew: true, title: "", notes: "", col: presetCol || currentColId(), tags: [], media: [], perf: normPerf(), archived: false, postDate: "", created: Date.now(), updated: Date.now() };
     drawSheet(true);
   }
-  function closeSheet() { draft = null; storageOpen = false; tplEdit = null; document.getElementById("sheetRoot").textContent = ""; }
+  function closeSheet() { draft = null; storageOpen = false; tplEdit = null; syncOpen = false; syncEditCid = false; document.getElementById("sheetRoot").textContent = ""; }
 
   function drawSheet(focus) {
     var root = document.getElementById("sheetRoot"), confirmDel = false;
@@ -553,6 +558,7 @@ textarea.input { min-height: 84px; resize: vertical; }
     if (!draft.isNew) {
       del = h("button", { class: "btn danger", type: "button", onclick: function () {
         if (!confirmDel) { confirmDel = true; del.textContent = "Yakin hapus?"; return; }
+        addTomb("c_" + draft.id);
         state.cards = state.cards.filter(function (c) { return c.id !== draft.id; }); dbDel(draft.id); closeSheet(); render();
       } }, "Hapus");
     }
@@ -710,7 +716,7 @@ textarea.input { min-height: 84px; resize: vertical; }
   }
   function applyBackup(meta, replace) {
     applyTemplates(meta, replace);
-    if (replace) { state.cards.forEach(function (c) { dbDel(c.id); }); state.cards = []; flag("seeded", "1"); }
+    if (replace) { state.cards.forEach(function (c) { dbDel(c.id); if (!c.sample) addTomb("c_" + c.id); }); state.cards = []; flag("seeded", "1"); }
     meta.cards.forEach(function (raw) {
       var c = cleanCard(raw), i = state.cards.map(function (x) { return x.id; }).indexOf(c.id);
       if (i >= 0) state.cards[i] = c; else state.cards.push(c);
@@ -759,7 +765,10 @@ textarea.input { min-height: 84px; resize: vertical; }
     var sheet = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Backup dan pulihkan" },
       h("div", { class: "sheet-top" }, h("h3", null, "Backup dan pulihkan"),
         h("button", { class: "x-btn", type: "button", "aria-label": "Tutup", onclick: closeSheet }, "×")),
-      save, restore);
+      save, restore,
+      h("div", { class: "bk-block" }, h("h4", null, "Sinkron antar perangkat"),
+        h("div", { class: "hint" }, "Simpan otomatis ke Google Drive dan buka di HP lain atau laptop."),
+        h("button", { class: "btn ghost", type: "button", onclick: openSync }, "Buka Sinkron Google Drive")));
     var scrim = h("div", { class: "scrim", onclick: function (e) { if (e.target === scrim) closeSheet(); } }, sheet);
     root.appendChild(scrim);
   }
@@ -950,6 +959,7 @@ textarea.input { min-height: 84px; resize: vertical; }
     box.appendChild(h("button", { class: "tool", type: "button", onclick: openRecap }, "Rekap"));
     box.appendChild(h("button", { class: "tool", type: "button", onclick: openTemplates }, "Template"));
     box.appendChild(h("button", { class: "tool", type: "button", onclick: openStorage }, "Penyimpanan"));
+    box.appendChild(h("button", { class: "tool" + (needsSync() ? " dot" : ""), type: "button", onclick: openSync }, "Sinkron"));
   }
 
   /* ---------- hari ini ---------- */
@@ -1057,7 +1067,14 @@ textarea.input { min-height: 84px; resize: vertical; }
     { id: "tpl-mitos", name: "Mitos vs fakta", text: "Mitos: ...\nFakta: ...\n\nYang perlu dicek sebelum beli:\n1. ...\n2. ...\n3. ...\n\nLink produk ada di bawah." },
     { id: "tpl-review", name: "Review singkat", text: "Hook: ...\n\nKenapa aku pilih ini:\n- ...\n- ...\n\nCocok untuk: ...\nKurang cocok untuk: ...\n\nLink di bawah ya." }
   ];
-  function saveTemplates() { flag("tpl", JSON.stringify(state.tpls)); }
+  function persistTpls() { flag("tpl", JSON.stringify(state.tpls)); }
+  function saveTemplates() {
+    state.tpls.forEach(function (t) {
+      var hh = (t.name || "") + "\u0001" + t.text;
+      if (t.hash !== hh) { t.hash = hh; t.rev = Date.now(); }
+    });
+    persistTpls();
+  }
   function loadTemplates() {
     var raw = flag("tpl"), arr = null;
     try { arr = raw ? JSON.parse(raw) : null; } catch (e) { arr = null; }
@@ -1071,7 +1088,11 @@ textarea.input { min-height: 84px; resize: vertical; }
     if (!Array.isArray(meta.templates)) return;
     var incoming = meta.templates.filter(function (t) { return t && t.id && typeof t.text === "string"; })
       .map(function (t) { return { id: String(t.id), name: String(t.name || ""), text: String(t.text), updated: Number(t.updated) || Date.now(), sample: !!t.sample }; });
-    if (replace) state.tpls = incoming;
+    if (replace) {
+      var keep = incoming.map(function (x) { return x.id; });
+      state.tpls.forEach(function (x) { if (keep.indexOf(x.id) < 0) addTomb("t_" + x.id); });
+      state.tpls = incoming;
+    }
     else incoming.forEach(function (t) {
       var i = state.tpls.map(function (x) { return x.id; }).indexOf(t.id);
       if (i >= 0) state.tpls[i] = t; else state.tpls.push(t);
@@ -1104,7 +1125,7 @@ textarea.input { min-height: 84px; resize: vertical; }
           h("button", { class: "btn ghost sm", type: "button", onclick: function () { tplEdit = { id: t.id, name: t.name, text: t.text }; redraw(); } }, "Ubah"),
           del = h("button", { class: "btn danger sm", type: "button", onclick: function () {
             if (!sure) { sure = true; del.textContent = "Yakin?"; return; }
-            state.tpls = state.tpls.filter(function (x) { return x.id !== t.id; }); saveTemplates(); redraw();
+            addTomb("t_" + t.id); state.tpls = state.tpls.filter(function (x) { return x.id !== t.id; }); saveTemplates(); redraw();
           } }, "Hapus"));
     return h("div", { class: "tpl-row" },
       h("div", { class: "tpl-main" }, h("span", { class: "arch-title" }, (t.name || "Tanpa nama") + (t.sample ? " (contoh)" : "")), h("span", { class: "tpl-prev" }, t.text)),
@@ -1209,6 +1230,329 @@ textarea.input { min-height: 84px; resize: vertical; }
       h("div", { class: "hint" }, "File yang kamu Unduh dan file Backup ada di folder Download, dan muncul di Galeri atau File."),
       h("div", { class: "hint err" }, "Menghapus data Chrome atau data situs ini ikut menghapus semua kartu. Simpan backup dulu."));
     shell("Penyimpanan", [b1, b2, b3], "Penyimpanan", sheetRoot(), closeSheet, false);
+  }
+
+  /* ---------- sinkron Google Drive ---------- */
+  var SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+  var API = "https://www.googleapis.com/drive/v3/files";
+  var UPL = "https://www.googleapis.com/upload/drive/v3/files";
+  var GD = { token: "", exp: 0, tc: null, cid: "", cb: null, ecb: null, busy: false, gsi: null };
+  var syncOpen = false, syncMsg = "", syncErr = "", syncEditCid = false;
+
+  function loadTomb() { try { return JSON.parse(flag("tomb") || "{}") || {}; } catch (e) { return {}; } }
+  function saveTomb(t) { flag("tomb", JSON.stringify(t)); }
+  function addTomb(key, rev) { var t = loadTomb(); t[key] = rev || Date.now(); saveTomb(t); }
+  function connected() { return !!flag("gClientId"); }
+  function needsSync() {
+    if (!connected()) return false;
+    var last = Number(flag("lastSync") || 0);
+    if (state.cards.some(function (c) { return !c.sample && (c.rev || 0) > last; })) return true;
+    if (state.tpls.some(function (t) { return (t.rev || 0) > last; })) return true;
+    var tb = loadTomb();
+    return Object.keys(tb).some(function (k) { return tb[k] > last; });
+  }
+  function seq(list, fn) { return list.reduce(function (p, x, i) { return p.then(function () { return fn(x, i); }); }, Promise.resolve()); }
+  function loadGsi() {
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+    if (GD.gsi) return GD.gsi;
+    GD.gsi = new Promise(function (res, rej) {
+      var s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+      s.onload = function () { res(); };
+      s.onerror = function () { GD.gsi = null; rej(new Error("gsi")); };
+      document.head.appendChild(s);
+    });
+    return GD.gsi;
+  }
+  /* harus dipanggil langsung dari tap tombol supaya jendela Google tidak diblokir */
+  function ensureToken() {
+    return new Promise(function (resolve, reject) {
+      if (GD.token && Date.now() < GD.exp - 60000) return resolve(GD.token);
+      var cid = flag("gClientId");
+      if (!cid) return reject(new Error("noclient"));
+      if (!(window.google && window.google.accounts && window.google.accounts.oauth2)) { loadGsi().catch(function () {}); return reject(new Error("gsi")); }
+      if (!GD.tc || GD.cid !== cid) {
+        GD.cid = cid;
+        GD.tc = window.google.accounts.oauth2.initTokenClient({
+          client_id: cid, scope: SCOPE,
+          callback: function (resp) { if (GD.cb) GD.cb(resp); },
+          error_callback: function (err) { if (GD.ecb) GD.ecb(err); }
+        });
+      }
+      GD.cb = function (resp) {
+        if (!resp || resp.error) return reject(new Error((resp && resp.error) || "auth"));
+        if (!resp.scope || String(resp.scope).indexOf(SCOPE) < 0) return reject(new Error("scope"));
+        GD.token = resp.access_token; GD.exp = Date.now() + (Number(resp.expires_in) || 3600) * 1000;
+        resolve(GD.token);
+      };
+      GD.ecb = function (err) { reject(new Error((err && err.type) || "popup_closed")); };
+      GD.tc.requestAccessToken({});
+    });
+  }
+  function gfetch(url, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: "Bearer " + GD.token }, opts.headers || {});
+    return fetch(url, opts).then(function (r) {
+      if (r.ok) return r;
+      return r.text().then(function (t) { var e = new Error("drive " + r.status); e.status = r.status; e.body = t; throw e; });
+    });
+  }
+  function gList() {
+    var out = [];
+    function page(tok) {
+      var u = API + "?spaces=appDataFolder&pageSize=1000&q=" + encodeURIComponent("trashed=false") +
+        "&fields=" + encodeURIComponent("nextPageToken,files(id,name,createdTime,appProperties)") + (tok ? "&pageToken=" + encodeURIComponent(tok) : "");
+      return gfetch(u).then(function (r) { return r.json(); }).then(function (j) {
+        out = out.concat(j.files || []);
+        return j.nextPageToken ? page(j.nextPageToken) : out;
+      });
+    }
+    return page("");
+  }
+  function gJson(id) { return gfetch(API + "/" + id + "?alt=media").then(function (r) { return r.json(); }); }
+  function gBlob(id, type) {
+    return gfetch(API + "/" + id + "?alt=media").then(function (r) { return r.blob(); })
+      .then(function (b) { return !type || b.type === type ? b : b.slice(0, b.size, type); });
+  }
+  function gDelete(id) { return gfetch(API + "/" + id, { method: "DELETE" }); }
+  function gPut(existingId, name, mime, body, props) {
+    var meta = { name: name, appProperties: props || {} };
+    if (!existingId) meta.parents = ["appDataFolder"];
+    var method = existingId ? "PATCH" : "POST";
+    var base = UPL + (existingId ? "/" + existingId : "");
+    var fields = "&fields=" + encodeURIComponent("id,name,createdTime,appProperties");
+    var size = typeof body === "string" ? new Blob([body]).size : body.size;
+    if (size <= 8 * 1048576) {
+      var b = "stefsb" + uid();
+      var blob = new Blob(["--" + b + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) + "\r\n--" + b + "\r\nContent-Type: " + mime + "\r\n\r\n", body, "\r\n--" + b + "--"]);
+      return gfetch(base + "?uploadType=multipart" + fields, { method: method, headers: { "Content-Type": "multipart/related; boundary=" + b }, body: blob }).then(function (r) { return r.json(); });
+    }
+    return gfetch(base + "?uploadType=resumable" + fields, { method: method, headers: { "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mime, "X-Upload-Content-Length": String(size) }, body: JSON.stringify(meta) })
+      .then(function (r) {
+        var loc = r.headers.get("Location");
+        if (!loc) throw new Error("no upload url");
+        return fetch(loc, { method: "PUT", headers: { "Content-Type": mime }, body: body }).then(function (r2) {
+          if (!r2.ok) { var e = new Error("drive " + r2.status); e.status = r2.status; throw e; }
+          return r2.json();
+        });
+      });
+  }
+  function cardJson(c) {
+    return JSON.stringify({ id: c.id, title: c.title, notes: c.notes, col: c.col, tags: c.tags, created: c.created, updated: c.updated,
+      archived: !!c.archived, perf: normPerf(c.perf), postDate: c.postDate || "", order: typeof c.order === "number" ? c.order : null, rev: c.rev,
+      media: c.media.map(function (m) { return { id: m.id, type: m.type, name: m.name, size: m.blob.size }; }) });
+  }
+  function keepNewest(map, id, v) { if (!map[id] || v.rev > map[id].rev) map[id] = v; }
+  function decide(local, remote, tb) {
+    /* local: objek lokal atau undefined, remote: {rev, del} atau undefined, tb: waktu hapus lokal */
+    if (local) {
+      if (!remote) return "push";
+      if (remote.del) return remote.rev > local.rev ? "dellocal" : "push";
+      if (remote.rev > local.rev) return "pull";
+      if (local.rev > remote.rev) return "push";
+      return null;
+    }
+    if (!remote || remote.del) return null;
+    if (tb && tb > remote.rev) return "pushtomb";
+    return "pull";
+  }
+
+  function runSync() {
+    var st = { pushed: 0, pulled: 0, removed: 0, media: 0, cleaned: 0, err: 0 };
+    var rc = {}, rt = {}, rm = {};
+
+    function pullCard(id) {
+      var r = rc[id];
+      return gJson(r.fileId).then(function (meta) {
+        var have = {};
+        state.cards.forEach(function (c) { c.media.forEach(function (m) { have[m.id] = m.blob; }); });
+        var got = [];
+        return seq(Array.isArray(meta.media) ? meta.media : [], function (m) {
+          if (have[m.id]) { got.push({ id: m.id, type: m.type, name: m.name, blob: have[m.id] }); return null; }
+          var f = rm[m.id];
+          if (!f) throw new Error("media belum ada");
+          setProg("Mengunduh " + (m.name || "media") + "...");
+          return gBlob(f.fileId, m.type).then(function (b) { got.push({ id: m.id, type: m.type, name: m.name, blob: b }); st.media++; });
+        }).then(function () {
+          meta.media = got;
+          var c = cleanCard(meta); c.rev = r.rev; c.sample = false;
+          var i = state.cards.map(function (x) { return x.id; }).indexOf(id);
+          if (i >= 0) state.cards[i] = c; else state.cards.push(c);
+          dbPutRaw(c);
+          var tb = loadTomb(); if (tb["c_" + id]) { delete tb["c_" + id]; saveTomb(tb); }
+          st.pulled++;
+        });
+      });
+    }
+    function pushCard(c) {
+      var r = rc[c.id];
+      return seq(c.media, function (m) {
+        if (rm[m.id]) return null;
+        setProg("Mengunggah " + (m.name || "media") + "...");
+        return gPut(null, "m_" + m.id + "__" + String(m.name || "file").slice(0, 80), m.type, m.blob, {}).then(function (f) { rm[m.id] = { fileId: f.id, rev: 0, created: Date.now() }; st.media++; });
+      }).then(function () {
+        var props = { rev: String(c.rev) };
+        if (r) props.del = null;
+        return gPut(r ? r.fileId : null, "c_" + c.id + ".json", "application/json", cardJson(c), props);
+      }).then(function (f) { rc[c.id] = { fileId: f.id, rev: c.rev, del: false, created: Date.now() }; st.pushed++; });
+    }
+
+    return gList().then(function (files) {
+      files.forEach(function (f) {
+        var n = f.name || "", p = f.appProperties || {}, m;
+        var v = { fileId: f.id, rev: Number(p.rev) || 0, del: p.del === "1", created: f.createdTime ? Date.parse(f.createdTime) : 0 };
+        if ((m = /^c_(.+)\.json$/.exec(n))) keepNewest(rc, m[1], v);
+        else if ((m = /^t_(.+)\.json$/.exec(n))) keepNewest(rt, m[1], v);
+        else if ((m = /^m_([a-z0-9]+)__/.exec(n))) rm[m[1]] = v;
+      });
+      saveTemplates();
+      if (Object.keys(rc).some(function (k) { return !rc[k].del; }) && state.cards.some(function (c) { return c.sample; })) {
+        state.cards = state.cards.filter(function (c) { if (c.sample) { dbDel(c.id); return false; } return true; });
+      }
+      var tomb = loadTomb(), lc = {}, ids = {};
+      state.cards.forEach(function (c) { if (!c.sample) lc[c.id] = c; });
+      Object.keys(lc).forEach(function (k) { ids[k] = 1; });
+      Object.keys(rc).forEach(function (k) { ids[k] = 1; });
+      Object.keys(tomb).forEach(function (k) { if (k.indexOf("c_") === 0) ids[k.slice(2)] = 1; });
+      var jobs = Object.keys(ids).map(function (id) { var a = decide(lc[id], rc[id], tomb["c_" + id]); return a ? { a: a, id: id } : null; }).filter(Boolean);
+      return seq(jobs, function (j, i) {
+        setProg("Kartu " + (i + 1) + " dari " + jobs.length + "...");
+        var p;
+        if (j.a === "pull") p = pullCard(j.id);
+        else if (j.a === "push") p = pushCard(lc[j.id]);
+        else if (j.a === "dellocal") {
+          p = Promise.resolve().then(function () {
+            state.cards = state.cards.filter(function (c) { return c.id !== j.id; }); dbDel(j.id);
+            var tb = loadTomb(); tb["c_" + j.id] = rc[j.id].rev; saveTomb(tb); st.removed++;
+          });
+        } else {
+          var rev = loadTomb()["c_" + j.id];
+          p = gPut(rc[j.id].fileId, "c_" + j.id + ".json", "application/json", JSON.stringify({ id: j.id, del: true, rev: rev }), { rev: String(rev), del: "1" })
+            .then(function () { rc[j.id] = { fileId: rc[j.id].fileId, rev: rev, del: true }; st.pushed++; });
+        }
+        return p.catch(function (e) { if (e && e.status === 401) throw e; st.err++; });
+      });
+    }).then(function () {
+      setProg("Menyinkronkan template...");
+      var tomb = loadTomb(), lt = {}, ids = {};
+      state.tpls.forEach(function (t) { lt[t.id] = t; ids[t.id] = 1; });
+      Object.keys(rt).forEach(function (k) { ids[k] = 1; });
+      Object.keys(tomb).forEach(function (k) { if (k.indexOf("t_") === 0) ids[k.slice(2)] = 1; });
+      var jobs = Object.keys(ids).map(function (id) { var a = decide(lt[id], rt[id], tomb["t_" + id]); return a ? { a: a, id: id } : null; }).filter(Boolean);
+      return seq(jobs, function (j) {
+        var t = lt[j.id], r = rt[j.id], p;
+        if (j.a === "push") {
+          var props = { rev: String(t.rev) }; if (r) props.del = null;
+          p = gPut(r ? r.fileId : null, "t_" + t.id + ".json", "application/json", JSON.stringify({ id: t.id, name: t.name, text: t.text, updated: t.updated, sample: !!t.sample }), props).then(function () { st.pushed++; });
+        } else if (j.a === "pull") {
+          p = gJson(r.fileId).then(function (o) {
+            var nt = { id: j.id, name: String(o.name || ""), text: String(o.text || ""), updated: Number(o.updated) || Date.now(), sample: !!o.sample };
+            nt.hash = nt.name + "\u0001" + nt.text; nt.rev = r.rev;
+            var i = state.tpls.map(function (x) { return x.id; }).indexOf(j.id);
+            if (i >= 0) state.tpls[i] = nt; else state.tpls.push(nt);
+            var tb = loadTomb(); if (tb["t_" + j.id]) { delete tb["t_" + j.id]; saveTomb(tb); }
+            st.pulled++;
+          });
+        } else if (j.a === "dellocal") {
+          p = Promise.resolve().then(function () {
+            state.tpls = state.tpls.filter(function (x) { return x.id !== j.id; });
+            var tb = loadTomb(); tb["t_" + j.id] = r.rev; saveTomb(tb); st.removed++;
+          });
+        } else {
+          var rev = tomb["t_" + j.id];
+          p = gPut(r.fileId, "t_" + j.id + ".json", "application/json", JSON.stringify({ id: j.id, del: true, rev: rev }), { rev: String(rev), del: "1" }).then(function () { st.pushed++; });
+        }
+        return p.catch(function (e) { if (e && e.status === 401) throw e; st.err++; });
+      }).then(persistTpls);
+    }).then(function () {
+      if (st.err) return null;
+      var ref = {};
+      state.cards.forEach(function (c) { c.media.forEach(function (m) { ref[m.id] = 1; }); });
+      var orphans = Object.keys(rm).filter(function (id) { return !ref[id] && rm[id].created && Date.now() - rm[id].created > 864e5; }).slice(0, 50);
+      return seq(orphans, function (id) { return gDelete(rm[id].fileId).then(function () { st.cleaned++; }).catch(function () {}); });
+    }).then(function () { return st; });
+  }
+
+  function friendly(e) {
+    var m = (e && e.message) || "";
+    if (m === "noclient") return "Client ID belum diisi.";
+    if (m === "gsi") return "Layanan Google belum siap. Pastikan ada internet, lalu tap Sinkron lagi.";
+    if (m === "popup_closed") return "Jendela Google ditutup sebelum selesai. Kalau Google menampilkan error origin_mismatch, cek isian Authorized JavaScript origins di Google Cloud.";
+    if (m === "popup_failed_to_open") return "Jendela Google tidak bisa dibuka. Coba buka situs ini langsung di Chrome, lalu sinkron dari sana.";
+    if (m === "access_denied") return "Akses ditolak. Pastikan emailmu sudah ditambahkan sebagai Test user dan izin Drive dicentang.";
+    if (m === "scope") return "Izin Drive belum diberikan. Ulangi dan centang izin penyimpanan.";
+    if (e && e.status === 401) return "Sesi Google habis. Tap Sinkron lagi.";
+    if (e && e.status === 403) return /quota/i.test(e.body || "") ? "Ruang Google Drive penuh." : "Drive menolak akses (403). Pastikan Google Drive API sudah diaktifkan di proyekmu.";
+    if (e instanceof TypeError) return "Koneksi bermasalah. Coba lagi saat internet stabil.";
+    return "Sinkron gagal (" + m + "). Coba lagi.";
+  }
+  function setProg(t) { syncMsg = t; var el = document.getElementById("syncProg"); if (el) el.textContent = t; }
+  function refreshSyncBtn() {
+    var b = document.getElementById("syncBtn");
+    if (b) { b.disabled = GD.busy; b.textContent = GD.busy ? "Menyinkronkan..." : "Sinkron sekarang"; }
+  }
+  function startSync() {
+    if (GD.busy) return;
+    if (!navigator.onLine) { showToast("Tidak ada internet"); return; }
+    var t0 = Date.now();
+    syncErr = ""; GD.busy = true; setProg("Menghubungkan ke Google..."); refreshSyncBtn();
+    ensureToken().then(function () { setProg("Membaca Google Drive..."); return runSync(); })
+      .then(function (st) {
+        if (!st.err) flag("lastSync", String(t0));
+        var parts = [];
+        if (st.pushed) parts.push(st.pushed + " dikirim");
+        if (st.pulled) parts.push(st.pulled + " diterima");
+        if (st.removed) parts.push(st.removed + " dihapus");
+        if (st.media) parts.push(st.media + " foto/video");
+        if (st.cleaned) parts.push(st.cleaned + " file lama dibersihkan");
+        syncMsg = st.err ? "Sinkron belum tuntas. " + (parts.length ? parts.join(", ") + "." : "") : "Sinkron selesai, " + fmt(Date.now()) + ". " + (parts.length ? parts.join(", ") + "." : "Semua sudah sama.");
+        if (st.err) syncErr = st.err + " item gagal. Tap Sinkron lagi untuk mencoba ulang.";
+      })
+      .catch(function (e) { syncErr = friendly(e); syncMsg = ""; })
+      .then(function () { GD.busy = false; render(); if (syncOpen) drawSync(); });
+  }
+  function openSync() { draft = null; storageOpen = false; syncOpen = true; syncEditCid = false; loadGsi().catch(function () {}); drawSync(); }
+  function drawSync() {
+    var cid = flag("gClientId") || "", blocks = [];
+    if (!cid || syncEditCid) {
+      var inp = h("input", { class: "input", id: "gCid", placeholder: "123456-abc.apps.googleusercontent.com", value: cid, autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+      blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Sambungkan Google Drive"),
+        h("div", { class: "hint" }, "Tempel Client ID dari Google Cloud. Langkah membuatnya ada di panduan. Client ID bukan password, jadi aman disimpan di sini."),
+        h("div", { class: "field" }, h("label", { for: "gCid" }, "Client ID"), inp),
+        h("div", { class: "actions" },
+          cid ? h("button", { class: "btn ghost", type: "button", onclick: function () { syncEditCid = false; drawSync(); } }, "Batal") : null,
+          h("button", { class: "btn", type: "button", onclick: function () {
+            var v = inp.value.trim();
+            if (!/^[A-Za-z0-9_\-.]+\.apps\.googleusercontent\.com$/.test(v)) { showToast("Format Client ID belum benar"); return; }
+            flag("gClientId", v); GD.token = ""; GD.tc = null; syncEditCid = false; syncErr = ""; syncMsg = "";
+            drawSync(); render();
+          } }, "Simpan"))));
+      blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Alamat situs ini"),
+        h("div", { class: "hint" }, "Isi persis alamat ini di bagian Authorized JavaScript origins saat membuat Client ID."),
+        h("div", { class: "sync-url" }, h("code", null, location.origin),
+          h("button", { class: "btn ghost sm", type: "button", onclick: function () { copyText(location.origin).then(function () { showToast("Alamat disalin"); }).catch(function () { showToast("Gagal menyalin"); }); } }, "Salin"))));
+    } else {
+      var last = Number(flag("lastSync") || 0), sure = false;
+      var disc = h("button", { class: "btn danger half", type: "button", onclick: function () {
+        if (!sure) { sure = true; disc.textContent = "Yakin putuskan?"; return; }
+        ["gClientId", "lastSync"].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+        GD.token = ""; GD.tc = null; syncMsg = ""; syncErr = "";
+        showToast("Sinkron diputuskan. Data di HP tetap ada."); drawSync(); render();
+      } }, "Putuskan");
+      blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Sinkron Google Drive"),
+        h("div", { class: "hint" }, last ? "Terakhir sinkron: " + fmt(last) + "." : "Belum pernah sinkron."),
+        needsSync() ? h("div", { class: "hint" }, "Ada perubahan yang belum dikirim.") : null,
+        h("div", { class: "hint", id: "syncProg", "aria-live": "polite" }, syncMsg),
+        syncErr ? h("div", { class: "hint err" }, syncErr) : null,
+        h("button", { class: "btn", id: "syncBtn", type: "button", disabled: GD.busy ? "true" : null, onclick: startSync }, GD.busy ? "Menyinkronkan..." : "Sinkron sekarang"),
+        h("div", { class: "actions" },
+          h("button", { class: "btn ghost half", type: "button", onclick: function () { syncEditCid = true; drawSync(); } }, "Ubah Client ID"), disc)));
+      blocks.push(h("div", { class: "bk-block" }, h("h4", null, "Cara pakai"),
+        h("div", { class: "hint" }, "Di perangkat lain, buka alamat aplikasi ini, isi Client ID yang sama, lalu tap Sinkron sekarang. Kartu, foto, video, dan template akan ikut."),
+        h("div", { class: "hint" }, "Kalau dua perangkat mengubah kartu yang sama, versi yang terakhir diubah yang dipakai. Foto dan video ikut dikirim, jadi pakai Wi-Fi untuk sinkron pertama."),
+        h("div", { class: "hint" }, "Data tersimpan di folder tersembunyi milik aplikasi di Google Drive-mu dan ikut memakai kuota Drive.")));
+    }
+    shell("Sinkron Google Drive", blocks, "Sinkron Google Drive", sheetRoot(), closeSheet, false);
   }
 
   /* ---------- performa, duplikat, arsip ---------- */

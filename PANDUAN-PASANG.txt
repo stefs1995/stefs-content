@@ -57,3 +57,11 @@ LOKASI DATA DI HP
 - Cek ukuran: Pengaturan HP > Aplikasi > Chrome > Penyimpanan, atau Chrome > titik tiga > Setelan > Setelan situs > Semua situs.
 - File hasil Unduh dan Backup ada di folder Download.
 - Menghapus data Chrome atau data situs ikut menghapus semua kartu. Simpan backup dulu.
+
+
+=== VERSI BARU: SINKRON GOOGLE DRIVE (HP dan laptop) ===
+Ganti semua file lama di GitHub dengan isi zip ini (Add file > Upload files > Commit).
+Lalu ikuti langkah membuat Client ID (ada di chat). Setelah itu di aplikasi:
+tap Sinkron > tempel Client ID > Simpan > Sinkron sekarang.
+Di laptop: buka https://stefs1995.github.io/stefs-content/ , isi Client ID yang sama, Sinkron sekarang.
+Tips: tap Sinkron setiap selesai mengubah sesuatu, dan sebelum membuka di perangkat lain.
